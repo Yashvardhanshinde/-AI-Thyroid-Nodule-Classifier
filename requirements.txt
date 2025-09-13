@@ -1,6 +1,7 @@
 streamlit
-tensorflow-cpu
+tensorflow
 numpy
 Pillow
 scikit-learn
 plotly
+reportlab
