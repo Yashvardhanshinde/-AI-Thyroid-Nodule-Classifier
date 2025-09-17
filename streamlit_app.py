@@ -382,9 +382,11 @@ def create_enhanced_pdf_report(patient_info, prediction_results, image_data=None
     if prediction.lower() == 'benign':
         result_color = colors.HexColor('#228B22')
         result_text = "BENIGN (NON-CANCEROUS)"
+        predicted_conf = prediction_results['benign_conf']
     else:
         result_color = colors.HexColor('#DC143C')
         result_text = "MALIGNANT (POTENTIALLY CANCEROUS)"
+        predicted_conf = prediction_results['malignant_conf']
     
     result_para = Paragraph(
         f"<b>CLASSIFICATION:</b> {result_text}<br/><b>CONFIDENCE LEVEL:</b> {confidence:.1f}%",
@@ -394,18 +396,15 @@ def create_enhanced_pdf_report(patient_info, prediction_results, image_data=None
     story.append(result_para)
     story.append(Spacer(1, 10))
     
-    # Confidence breakdown table
+    # Single prediction confidence table (only showing predicted class)
     confidence_data = [
         ['Classification Category', 'Probability', 'Confidence Level', 'Clinical Interpretation'],
-        ['Benign (Non-cancerous)', f"{prediction_results['benign_conf']:.2f}%", 
-         get_confidence_level(prediction_results['benign_conf']), 
-         'Routine monitoring may be sufficient'],
-        ['Malignant (Cancerous)', f"{prediction_results['malignant_conf']:.2f}%", 
-         get_confidence_level(prediction_results['malignant_conf']), 
-         'Further evaluation recommended']
+        [result_text, f"{predicted_conf:.2f}%", 
+         get_confidence_level(predicted_conf), 
+         'Further evaluation recommended' if prediction.lower() == 'malignant' else 'Routine monitoring may be sufficient']
     ]
     
-    confidence_table = Table(confidence_data, colWidths=[1.5*inch, 1*inch, 1.2*inch, 2.3*inch])
+    confidence_table = Table(confidence_data, colWidths=[2*inch, 1.2*inch, 1.3*inch, 2.5*inch])
     confidence_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F0F0F0')),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -597,30 +596,36 @@ def preprocess_image(img):
     return img_array
 
 # --------------------------
-# Create Confidence Chart
+# Create Single Confidence Chart (Updated)
 # --------------------------
-def create_confidence_chart(benign_conf, malignant_conf):
-    """Create an interactive confidence chart"""
-    fig = make_subplots(
-        rows=1, cols=2,
-        specs=[[{"type": "indicator"}, {"type": "indicator"}]],
-        subplot_titles=("Benign Confidence", "Malignant Confidence"),
-        horizontal_spacing=0.1
-    )
+def create_confidence_chart(prediction, confidence, class_label):
+    """Create an interactive confidence chart showing only the predicted class"""
+    
+    # Determine color based on prediction
+    if class_label.lower() == 'benign':
+        bar_color = "#228B22"
+        title_text = "Benign Confidence"
+        step_color = "#90EE90"
+    else:
+        bar_color = "#DC143C" 
+        title_text = "Malignant Confidence"
+        step_color = "#FFB6C1"
+    
+    fig = go.Figure()
     
     fig.add_trace(go.Indicator(
         mode = "gauge+number+delta",
-        value = benign_conf,
+        value = confidence,
         domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': "Benign", 'font': {'color': "white", 'size': 18}},
+        title = {'text': title_text, 'font': {'color': "white", 'size': 20}},
         delta = {'reference': 50, 'font': {'color': "white"}},
-        number = {'font': {'color': "white", 'size': 24}},
+        number = {'font': {'color': "white", 'size': 28}},
         gauge = {
             'axis': {'range': [None, 100], 'tickfont': {'color': "white"}},
-            'bar': {'color': "#FF8C00"},
+            'bar': {'color': bar_color},
             'steps': [
                 {'range': [0, 50], 'color': "#333333"},
-                {'range': [50, 100], 'color': "#FFE4B5"}
+                {'range': [50, 100], 'color': step_color}
             ],
             'threshold': {
                 'line': {'color': "#FF8C00", 'width': 4},
@@ -628,53 +633,22 @@ def create_confidence_chart(benign_conf, malignant_conf):
                 'value': 90
             }
         }
-    ), row=1, col=1)
-    
-    fig.add_trace(go.Indicator(
-        mode = "gauge+number+delta",
-        value = malignant_conf,
-        domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': "Malignant", 'font': {'color': "white", 'size': 18}},
-        delta = {'reference': 50, 'font': {'color': "white"}},
-        number = {'font': {'color': "white", 'size': 24}},
-        gauge = {
-            'axis': {'range': [None, 100], 'tickfont': {'color': "white"}},
-            'bar': {'color': "#dc3545"},
-            'steps': [
-                {'range': [0, 50], 'color': "#333333"},
-                {'range': [50, 100], 'color': "#f8d7da"}
-            ],
-            'threshold': {
-                'line': {'color': "#FF8C00", 'width': 4},
-                'thickness': 0.75,
-                'value': 90
-            }
-        }
-    ), row=1, col=2)
+    ))
     
     fig.update_layout(
-        height=350,
+        height=400,
         paper_bgcolor="rgba(0,0,0,0.8)",
         plot_bgcolor="rgba(0,0,0,0)",
         font={'color': "white", 'family': "Arial"},
-        margin=dict(l=20, r=20, t=60, b=20),
-        annotations=[
-            dict(
-                text="Benign Confidence",
-                x=0.225, y=1.1,
-                xref="paper", yref="paper",
-                font=dict(color="white", size=16),
-                showarrow=False
-            ),
-            dict(
-                text="Malignant Confidence", 
-                x=0.775, y=1.1,
-                xref="paper", yref="paper",
-                font=dict(color="white", size=16),
-                showarrow=False
-            )
-        ],
-        showlegend=False
+        margin=dict(l=40, r=40, t=80, b=40),
+        title={
+            'text': f"<b>{class_label.upper()} Classification Confidence</b>",
+            'x': 0.5,
+            'y': 0.95,
+            'xanchor': 'center',
+            'yanchor': 'top',
+            'font': {'size': 18, 'color': 'white'}
+        }
     )
     
     return fig
@@ -769,15 +743,13 @@ if uploaded_image is not None:
         
         # Image info
         st.markdown(f"""
-        📊 **Image Details:**
-        - **Size:** {img.size[0]} × {img.size[1]} pixels
-        - **Format:** {img.format}
-        - **Mode:** {img.mode}
+        📊 *Image Details:*
+        - *Size:* {img.size[0]} × {img.size[1]} pixels
+        - *Format:* {img.format}
+        - *Mode:* {img.mode}
         """)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        
         # Add processing animation
         with st.spinner('🧠 AI is analyzing your image...'):
             # Simulate processing time for better UX
@@ -813,166 +785,175 @@ if uploaded_image is not None:
         
         # Main prediction with enhanced styling
         if class_label.lower() == 'benign':
-            st.success(f"✅ **Prediction: BENIGN** ({benign_conf:.1f}% confidence)")
+            st.success(f"✅ *Prediction: BENIGN* ({benign_conf:.1f}% confidence)")
         elif class_label.lower() == 'malignant':
-            st.error(f"⚠ **Prediction: MALIGNANT** ({malignant_conf:.1f}% confidence)")
+            st.error(f"⚠ *Prediction: MALIGNANT* ({malignant_conf:.1f}% confidence)")
         else:
-            st.warning(f"❓ **Unknown classification:** {class_label}")
+            st.warning(f"❓ *Unknown classification:* {class_label}")
         
         # Confidence level interpretation
         if max_confidence >= 90:
-            st.success("🔒 **High Confidence** - Very reliable prediction")
+            st.success("🔒 *High Confidence* - Very reliable prediction")
         elif max_confidence >= 70:
-            st.warning("🔍 **Moderate Confidence** - Reasonably reliable")
+            st.warning("🔍 *Moderate Confidence* - Reasonably reliable")
         else:
-            st.error("❗ **Low Confidence** - Consider additional analysis")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.error("❗ *Low Confidence* - Consider additional analysis")
     
     # Detailed Analysis Section
     st.markdown("---")
     st.markdown("### 📈 Detailed Confidence Analysis")
     
-    # Interactive confidence chart
-    chart = create_confidence_chart(benign_conf, malignant_conf)
+    # Interactive confidence chart - now shows only predicted class
+    chart = create_confidence_chart(st.session_state.prediction_results['prediction'], 
+                                   st.session_state.prediction_results['confidence'],
+                                   st.session_state.prediction_results['prediction'])
     st.plotly_chart(chart, use_container_width=True)
     
-    # Detailed metrics
-    col3, col4, col5 = st.columns(3)
+    # Single metric for predicted class only
+    st.markdown("#### 🎯 Prediction Metrics")
     
-    with col3:
-        st.metric(
-            label="🟢 Benign Probability",
-            value=f"{benign_conf:.2f}%",
-            delta=f"{benign_conf - 50:.1f}% vs baseline"
-        )
-    
-    with col4:
-        st.metric(
-            label="🔴 Malignant Probability", 
-            value=f"{malignant_conf:.2f}%",
-            delta=f"{malignant_conf - 50:.1f}% vs baseline"
-        )
-    
-    with col5:
-        st.metric(
-            label="🎯 Confidence Level",
-            value=f"{max_confidence:.1f}%",
-            delta="Prediction strength"
-        )
+    if st.session_state.prediction_results['prediction'].lower() == 'benign':
+        col_center = st.columns([1, 2, 1])[1]  # Center the metric
+        with col_center:
+            st.metric(
+                label="🟢 Benign Probability",
+                value=f"{benign_conf:.2f}%",
+                delta=f"{benign_conf - 50:.1f}% vs baseline"
+            )
+    else:
+        col_center = st.columns([1, 2, 1])[1]  # Center the metric
+        with col_center:
+            st.metric(
+                label="🔴 Malignant Probability", 
+                value=f"{malignant_conf:.2f}%",
+                delta=f"{malignant_conf - 50:.1f}% vs baseline"
+            )
     
     # --------------------------
-    # Enhanced PDF Report Section
+    # PATIENT INFORMATION SECTION (REPORT GENERATION)
     # --------------------------
     st.markdown("---")
-    st.markdown("### 📄 Generate Professional Medical Report")
+    st.markdown("""
+    <div class="report-section">
+        <h2 style='color: #FF8C00; text-align: center; margin-bottom: 2rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);'>
+            📋 Generate Professional Medical Report
+        </h2>
+    """, unsafe_allow_html=True)
     
-    # Patient information form
     st.markdown("#### 👤 Patient Information")
+    st.markdown("Fill in patient details for comprehensive report generation")
     
-    col_form1, col_form2 = st.columns(2)
+    # Create two columns for patient information
+    col_left, col_right = st.columns(2, gap="medium")
     
-    with col_form1:
-        patient_name = st.text_input("Patient Name", placeholder="Enter patient full name")
-        patient_id = st.text_input("Patient ID", placeholder="Enter patient ID")
-        age = st.text_input("Age", placeholder="Enter age")
+    with col_left:
+        patient_name = st.text_input("👤 Patient Name", 
+                                   placeholder="Enter patient's full name")
+        patient_id = st.text_input("🆔 Patient ID", 
+                                 placeholder="Enter patient ID/MRN")
+        patient_age = st.number_input("🎂 Age", min_value=1, max_value=120, 
+                                    value=None, placeholder="Age in years")
     
-    with col_form2:
-        gender = st.selectbox("Gender", ["Select", "Male", "Female", "Other"])
-        scan_date = st.date_input("Scan Date", datetime.now().date())
-        physician = st.text_input("Referring Physician", placeholder="Dr. Name")
+    with col_right:
+        patient_gender = st.selectbox("⚧ Gender", 
+                                    ["", "Male", "Female", "Other", "Prefer not to say"],
+                                    index=0)
+        scan_date = st.date_input("📅 Scan Date", 
+                                value=datetime.now().date(),
+                                help="Date when the ultrasound was performed")
+        physician_name = st.text_input("👨‍⚕ Referring Physician", 
+                                     placeholder="Dr. Name")
     
-    st.markdown("#### 🎯 Report Generation")
+    # Additional clinical information
+    st.markdown("#### 📝 Additional Clinical Information")
+    clinical_notes = st.text_area("Clinical Notes (Optional)", 
+                                 placeholder="Any additional clinical observations, symptoms, or relevant patient history...",
+                                 height=100)
     
-    generate_pdf = st.button("📄 Generate Enhanced PDF Report", 
-                            type="primary", 
-                            use_container_width=True,
-                            help="Generate a comprehensive professional medical report")
+    # Report generation section
+    st.markdown("---")
+    st.markdown("#### 📄 Report Generation")
     
-    # Generate Enhanced PDF Report
-    if generate_pdf and st.session_state.get('analysis_complete', False):
-        if not patient_name:
-            st.error("❗ Please enter patient name to generate report.")
-        else:
-            with st.spinner("📄 Generating comprehensive PDF report..."):
-                # Prepare patient info
-                patient_info = {
-                    'name': patient_name,
-                    'patient_id': patient_id if patient_id else 'N/A',
-                    'age': age if age else 'N/A',
-                    'gender': gender if gender != 'Select' else 'N/A',
-                    'scan_date': scan_date.strftime("%B %d, %Y"),
-                    'physician': physician if physician else 'N/A'
-                }
-                
-                # Generate Enhanced PDF
-                try:
-                    pdf_buffer = create_enhanced_pdf_report(patient_info, st.session_state.prediction_results)
-                    st.session_state.pdf_buffer = pdf_buffer
-                    st.session_state.pdf_generated = True
-                    st.session_state.patient_name = patient_name
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        if st.button("🔄 Generate Professional PDF Report", 
+                    use_container_width=True,
+                    help="Generate a comprehensive medical report with patient information and analysis results"):
+            
+            if not patient_name.strip():
+                st.error("⚠ Please enter patient name to generate report")
+            else:
+                with st.spinner("📝 Generating comprehensive PDF report..."):
+                    # Prepare patient information
+                    patient_info = {
+                        'name': patient_name.strip(),
+                        'patient_id': patient_id.strip() if patient_id.strip() else "Not Assigned",
+                        'age': patient_age,
+                        'gender': patient_gender if patient_gender else "Not Specified",
+                        'scan_date': scan_date.strftime("%B %d, %Y"),
+                        'physician': physician_name.strip() if physician_name.strip() else "Not Specified",
+                        'clinical_notes': clinical_notes.strip() if clinical_notes.strip() else "None provided"
+                    }
                     
-                    st.success("✅ Enhanced PDF report generated successfully!")
-                    st.balloons()
-                    
-                    # Show download button
-                    filename = f"Enhanced_Thyroid_Report_{patient_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-                    
-                    st.download_button(
-                        label="⬇️ Download Enhanced PDF Report",
-                        data=pdf_buffer.getvalue(),
-                        file_name=filename,
-                        mime="application/pdf",
-                        use_container_width=True,
-                        type="secondary",
-                        help="Download the comprehensive medical report"
+                    # Generate the PDF report
+                    pdf_buffer = create_enhanced_pdf_report(
+                        patient_info, 
+                        st.session_state.prediction_results
                     )
                     
-                except Exception as e:
-                    st.error(f"❌ Error generating PDF: {str(e)}")
+                    # Store in session state
+                    st.session_state.pdf_report = pdf_buffer.getvalue()
+                    st.session_state.report_generated = True
+                    
+                st.success("✅ Report generated successfully!")
+                st.balloons()
+    
+    # Download section
+    if 'report_generated' in st.session_state and st.session_state.report_generated:
+        st.markdown("---")
+        st.markdown("#### 📥 Download Report")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            # Generate filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            patient_name_clean = "".join(c for c in patient_name.replace(" ", "") if c.isalnum() or c in ".-")
+            filename = f"Thyroid_AI_Report_{patient_name_clean}_{timestamp}.pdf"
+            
+            st.download_button(
+                label="📥 Download Professional Report",
+                data=st.session_state.pdf_report,
+                file_name=filename,
+                mime="application/pdf",
+                use_container_width=True,
+                help="Download the complete medical analysis report"
+            )
+        
+        # Report summary
+        st.markdown("---")
+        st.markdown("#### 📊 Report Summary")
+        
+        summary_col1, summary_col2 = st.columns(2)
+        
+        with summary_col1:
+            st.info(f"""
+            *Patient:* {patient_name}
+            *ID:* {patient_id if patient_id.strip() else 'Not Assigned'}
+            *Classification:* {st.session_state.prediction_results['prediction'].upper()}
+            """)
+        
+        with summary_col2:
+            st.info(f"""
+            *Confidence:* {st.session_state.prediction_results['confidence']:.1f}%
+            *Scan Date:* {scan_date.strftime("%B %d, %Y")}
+            *Report Generated:* {datetime.now().strftime("%Y-%m-%d %H:%M")}
+            """)
     
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Additional Information
-    st.markdown("---")
-    st.markdown("### 💡 Understanding Your Results")
-    
-    with st.expander("📚 What do these results mean?", expanded=False):
-        st.markdown("""
-        **Benign Nodules:**
-        - Non-cancerous growths that are generally harmless
-        - May require monitoring but typically don't need aggressive treatment
-        - Very common, especially in older adults
-        
-        **Malignant Nodules:**
-        - Potentially cancerous growths requiring immediate medical attention
-        - Early detection significantly improves treatment outcomes
-        - Require comprehensive evaluation by healthcare professionals
-        
-        **Important:** This AI tool provides preliminary analysis only. Always consult with qualified medical professionals for proper diagnosis and treatment planning.
-        """)
-    
-    with st.expander("🔬 About the Enhanced AI Model", expanded=False):
-        st.markdown("""
-        **Model Architecture:** Advanced Convolutional Neural Network (CNN)
-        
-        **Training Data:** Thousands of validated thyroid ultrasound images
-        
-        **Input Requirements:** 128×128 pixel images, normalized RGB values
-        
-        **Performance:** Optimized for distinguishing benign and malignant patterns
-        
-        **Enhanced Features:**
-        - Multi-layer feature extraction
-        - Advanced preprocessing pipeline
-        - Confidence calibration
-        - Quality assessment integration
-        
-        **Limitations:** Results depend on image quality and may not capture all clinical factors
-        """)
 
 else:
-    # Welcome message with better styling
+    # Welcome message with better styling - This appears when no image is uploaded
     st.markdown("""
     <div class="prediction-card" style="text-align: center; padding: 3rem;">
         <h2 style="color: #FF8C00; margin-bottom: 1rem; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);">👆 Ready for Analysis</h2>
@@ -992,16 +973,17 @@ else:
                 <div>🔬 Technical Analysis</div>
             </div>
         </div>
-        
     </div>
     """, unsafe_allow_html=True)
 
-# Simple Footer
+# --------------------------
+# Footer Section - Always appears at the bottom
+# --------------------------
 st.markdown("---")
 st.markdown("""
 <div class='simple-footer'>
     <div class='footer-text'>
-        Developed By :- Yashvardhan Shinde | Sujal Patil | Ritesh Rodge | Omkar Varote
+        Developed By: Yashvardhan Shinde | Sujal Patil | Ritesh Rodge | Omkar Varote
     </div>
     <div class='footer-text'>
         Guided By: Prof. Nutan Bansode
